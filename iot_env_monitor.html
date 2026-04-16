@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SecureEnv — IoT Environmental Monitor</title>
+
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;600&display=swap" rel="stylesheet"/>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+/* ═══════════════════════════════════════════════
+   CSS VARIABLES & RESET
+═══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep:     #020b18;
+  --bg-mid:      #040f1e;
+  --neon-cyan:   #00f5ff;
+  --neon-green:  #00ff88;
+  --neon-red:    #ff2d55;
+  --neon-yellow: #ffd60a;
+  --neon-blue:   #3d7eff;
+  --glass-bg:    rgba(0, 20, 40, 0.55);
+  --glass-border:rgba(0, 245, 255, 0.18);
+  --glass-blur:  blur(18px);
+  --text-primary:#e8f4ff;
+  --text-muted:  #6a8fa8;
+  --font-display:'Orbitron', monospace;
+  --font-body:   'Rajdhani', sans-serif;
+  --font-mono:   'JetBrains Mono', monospace;
+  --radius:      14px;
+  --transition:  0.35s cubic-bezier(0.4,0,0.2,1);
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  overflow-x: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   ANIMATED CITY BACKGROUND
+═══════════════════════════════════════════════ */
+#bg-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Stars overlay */
+.stars {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(1px 1px at 30% 10%, rgba(255,255,255,0.4) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 50% 5%, rgba(0,245,255,0.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 15%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 85% 8%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 20% 40%, rgba(255,255,255,0.2) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 60% 30%, rgba(0,245,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 25%, rgba(255,255,255,0.4) 0%, transparent 100%);
+}
+
+/* ═══════════════════════════════════════════════
+   SCAN LINE EFFECT
+═══════════════════════════════════════════════ */
+.scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 245, 255, 0.015) 2px,
+    rgba(0, 245, 255, 0.015) 4px
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   SCREENS WRAPPER
+═══════════════════════════════════════════════ */
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.screen.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(1.03);
+}
+
+/* ═══════════════════════════════════════════════
+   LOGIN SCREEN
+═══════════════════════════════════════════════ */
+#login-screen {
+  background: rgba(2, 11, 24, 0.92);
+  backdrop-filter: blur(4px);
+}
+
+.login-box {
+  width: min(420px, 92vw);
+  padding: 48px 40px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 22px;
+  backdrop-filter: var(--glass-blur);
+  box-shadow: 0 0 60px rgba(0,245,255,0.1), 0 0 120px rgba(0,245,255,0.04);
+  animation: fadeUp 0.7s ease both;
+  position: relative;
+  overflow: hidden;
+}
+.login-box::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: 10%; right: 10%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+  animation: shimmer 2.5s ease infinite;
+}
+@keyframes shimmer { 0%,100%{opacity:0.4} 50%{opacity:1} }
+
+.login-logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.login-logo .icon-wrap {
+  display: inline-flex;
+  width: 68px; height: 68px;
+  border-radius: 50%;
+  border: 2px solid var(--neon-cyan);
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  position: relative;
+  box-shadow: 0 0 20px rgba(0,245,255,0.3), inset 0 0 20px rgba(0,245,255,0.05);
+  animation: pulse-ring 2s ease infinite;
+}
+@keyframes pulse-ring {
+  0%,100% { box-shadow: 0 0 20px rgba(0,245,255,0.3), inset 0 0 20px rgba(0,245,255,0.05); }
+  50%      { box-shadow: 0 0 35px rgba(0,245,255,0.6), inset 0 0 20px rgba(0,245,255,0.1); }
+}
+.login-logo svg { width: 34px; height: 34px; }
+.login-logo h1 {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 20px rgba(0,245,255,0.5);
+}
+.login-logo p {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+}
+
+.field-group { margin-bottom: 20px; }
+.field-group label {
+  display: block;
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+.field-group input {
+  width: 100%;
+  padding: 13px 16px;
+  background: rgba(0,245,255,0.04);
+  border: 1px solid rgba(0,245,255,0.15);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  outline: none;
+}
+.field-group input:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 0 3px rgba(0,245,255,0.1), 0 0 15px rgba(0,245,255,0.15);
+}
+.field-group input::placeholder { color: rgba(106,143,168,0.5); }
+
+.btn-login {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(0,245,255,0.15), rgba(61,126,255,0.2));
+  border: 1px solid var(--neon-cyan);
+  border-radius: 10px;
+  color: var(--neon-cyan);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+.btn-login:hover {
+  background: linear-gradient(135deg, rgba(0,245,255,0.25), rgba(61,126,255,0.3));
+  box-shadow: 0 0 25px rgba(0,245,255,0.25);
+  transform: translateY(-1px);
+}
+.btn-login:active { transform: translateY(0); }
+.hint {
+  text-align: center;
+  margin-top: 18px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.hint span { color: var(--neon-green); }
+
+/* ═══════════════════════════════════════════════
+   AUTH LOADING SCREEN
+═══════════════════════════════════════════════ */
+#auth-screen {
+  background: rgba(2, 11, 24, 0.96);
+  flex-direction: column;
+  gap: 28px;
+}
+.auth-logo {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 30px rgba(0,245,255,0.5);
+  letter-spacing: 0.15em;
+  animation: fadeUp 0.5s ease both;
+}
+.auth-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, 90vw);
+  animation: fadeUp 0.5s 0.2s ease both;
+}
+.auth-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: rgba(0,245,255,0.03);
+  border: 1px solid rgba(0,245,255,0.08);
+  transition: all 0.5s;
+}
+.auth-step.done {
+  color: var(--neon-green);
+  border-color: rgba(0,255,136,0.25);
+  background: rgba(0,255,136,0.05);
+}
+.auth-step.active {
+  color: var(--neon-cyan);
+  border-color: rgba(0,245,255,0.3);
+  background: rgba(0,245,255,0.07);
+  animation: auth-pulse 0.8s ease infinite;
+}
+@keyframes auth-pulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
+.step-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+.auth-bar {
+  width: min(380px, 90vw);
+  height: 3px;
+  background: rgba(0,245,255,0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  animation: fadeUp 0.5s 0.3s ease both;
+}
+.auth-bar-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--neon-blue), var(--neon-cyan));
+  border-radius: 10px;
+  transition: width 0.4s ease;
+  box-shadow: 0 0 10px var(--neon-cyan);
+}
+
+/* ═══════════════════════════════════════════════
+   DASHBOARD LAYOUT
+═══════════════════════════════════════════════ */
+#dashboard-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  background: rgba(2, 11, 24, 0.82);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(0,245,255,0.1);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.topbar-left { display: flex; align-items: center; gap: 14px; }
+.topbar-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--neon-cyan);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 12px rgba(0,245,255,0.2);
+}
+.topbar-icon svg { width: 20px; height: 20px; }
+.topbar-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--neon-cyan);
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 15px rgba(0,245,255,0.4);
+}
+.topbar-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
+.topbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Status badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 50px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  border: 1px solid;
+}
+.badge-online {
+  background: rgba(0,255,136,0.08);
+  border-color: rgba(0,255,136,0.3);
+  color: var(--neon-green);
+}
+.badge-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: blink 1.2s ease infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+#live-clock {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+.btn-logout {
+  padding: 6px 14px;
+  background: rgba(255,45,85,0.1);
+  border: 1px solid rgba(255,45,85,0.35);
+  border-radius: 8px;
+  color: var(--neon-red);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  letter-spacing: 0.06em;
+}
+.btn-logout:hover {
+  background: rgba(255,45,85,0.2);
+  box-shadow: 0 0 12px rgba(255,45,85,0.25);
+}
+
+/* ── MAIN CONTENT ── */
+.main-content {
+  flex: 1;
+  padding: 24px 24px 32px;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── SECTION TITLES ── */
+.section-title {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(0,245,255,0.15), transparent);
+}
+
+/* ── GLASS CARD ── */
+.card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(0,245,255,0.04), transparent 60%);
+  pointer-events: none;
+}
+
+/* ── SENSOR GRID ── */
+.sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.sensor-card {
+  padding: 22px 24px 20px;
+  cursor: default;
+}
+.sensor-card:hover {
+  border-color: rgba(0,245,255,0.35);
+  box-shadow: 0 0 30px rgba(0,245,255,0.06);
+}
+.sensor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.sensor-name {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.sensor-unit {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: rgba(255,255,255,0.05);
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.07);
+}
+.sensor-value {
+  font-family: var(--font-display);
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 10px;
+  transition: color 0.4s;
+}
+.sensor-value.good   { color: var(--neon-green); text-shadow: 0 0 20px rgba(0,255,136,0.4); }
+.sensor-value.moderate { color: var(--neon-yellow); text-shadow: 0 0 20px rgba(255,214,10,0.4); }
+.sensor-value.unhealthy { color: var(--neon-red); text-shadow: 0 0 20px rgba(255,45,85,0.4); }
+.sensor-value.neutral { color: var(--neon-cyan); text-shadow: 0 0 20px rgba(0,245,255,0.4); }
+
+.sensor-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  font-family: var(--font-body);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid currentColor;
+}
+.status-good    { color: var(--neon-green); background: rgba(0,255,136,0.08); }
+.status-moderate{ color: var(--neon-yellow); background: rgba(255,214,10,0.08); }
+.status-unhealthy{color: var(--neon-red);   background: rgba(255,45,85,0.08); }
+.status-neutral { color: var(--neon-cyan);  background: rgba(0,245,255,0.08); }
+
+/* Mini sparkline bars */
+.mini-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 28px;
+  margin-top: 12px;
+}
+.mini-bar {
+  flex: 1;
+  border-radius: 2px;
+  background: rgba(0,245,255,0.2);
+  min-height: 4px;
+  transition: height 0.6s ease, background 0.4s;
+}
+
+/* ── INFO ROW ── */
+.info-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+@media (max-width: 700px) {
+  .info-row { grid-template-columns: 1fr; }
+  .sensor-grid { grid-template-columns: 1fr; }
+}
+
+/* ── CHART CARD ── */
+.chart-card {
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.chart-title {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  letter-spacing: 0.1em;
+}
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neon-red);
+}
+.legend-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--neon-red);
+  box-shadow: 0 0 8px var(--neon-red);
+}
+.chart-wrap {
+  position: relative;
+  height: 220px;
+}
+
+/* ── SECURITY CONTROL PANEL ── */
+.security-panel {
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.security-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.security-title {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.1em;
+}
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Toggle switch */
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toggle-label {
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+.toggle-switch {
+  position: relative;
+  width: 60px;
+  height: 30px;
+  cursor: pointer;
+}
+.toggle-switch input { display: none; }
+.toggle-track {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 15px;
+  background: rgba(255,45,85,0.2);
+  border: 1px solid rgba(255,45,85,0.4);
+  transition: all 0.35s;
+  position: relative;
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--neon-red);
+  top: 3px; left: 4px;
+  transition: all 0.35s;
+  box-shadow: 0 0 8px var(--neon-red);
+}
+.toggle-switch input:checked ~ .toggle-track {
+  background: rgba(0,255,136,0.12);
+  border-color: rgba(0,255,136,0.4);
+}
+.toggle-switch input:checked ~ .toggle-track::after {
+  background: var(--neon-green);
+  left: calc(100% - 26px);
+  box-shadow: 0 0 8px var(--neon-green);
+}
+
+.security-mode-badge {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid;
+  transition: all 0.4s;
+  letter-spacing: 0.08em;
+}
+.mode-insecure {
+  color: var(--neon-red);
+  border-color: rgba(255,45,85,0.4);
+  background: rgba(255,45,85,0.08);
+}
+.mode-secure {
+  color: var(--neon-green);
+  border-color: rgba(0,255,136,0.4);
+  background: rgba(0,255,136,0.08);
+}
+
+/* ── BUTTONS ── */
+.btn {
+  padding: 10px 20px;
+  border-radius: 9px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: 1px solid;
+  text-transform: uppercase;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.btn-attack {
+  background: rgba(255,45,85,0.1);
+  border-color: rgba(255,45,85,0.5);
+  color: var(--neon-red);
+}
+.btn-attack:hover {
+  background: rgba(255,45,85,0.2);
+  box-shadow: 0 0 20px rgba(255,45,85,0.3);
+  transform: translateY(-1px);
+}
+.btn-attack:active { transform: scale(0.97); }
+
+/* ── ALERT BANNER ── */
+.alert-area { margin-bottom: 20px; }
+.alert {
+  padding: 14px 20px;
+  border-radius: 10px;
+  border: 1px solid;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  letter-spacing: 0.05em;
+  animation: slideIn 0.35s ease;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.alert-danger {
+  background: rgba(255,45,85,0.1);
+  border-color: rgba(255,45,85,0.5);
+  color: var(--neon-red);
+  box-shadow: 0 0 20px rgba(255,45,85,0.1);
+}
+.alert-warning {
+  background: rgba(255,214,10,0.08);
+  border-color: rgba(255,214,10,0.4);
+  color: var(--neon-yellow);
+}
+.alert-success {
+  background: rgba(0,255,136,0.08);
+  border-color: rgba(0,255,136,0.35);
+  color: var(--neon-green);
+}
+.alert-icon { font-size: 1.1rem; flex-shrink: 0; }
+.alert-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  padding: 0 4px;
+}
+.alert-close:hover { opacity: 1; }
+
+/* ── LOG PANEL ── */
+.log-card { padding: 20px 24px; }
+.log-list {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,245,255,0.2) transparent;
+}
+.log-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 5px 8px;
+  border-radius: 5px;
+  animation: slideIn 0.3s ease both;
+}
+.log-entry:hover { background: rgba(0,245,255,0.03); }
+.log-time { color: rgba(106,143,168,0.6); flex-shrink: 0; width: 75px; }
+.log-entry.log-ok     .log-msg { color: rgba(0,255,136,0.8); }
+.log-entry.log-warn   .log-msg { color: rgba(255,214,10,0.8); }
+.log-entry.log-error  .log-msg { color: rgba(255,45,85,0.9); }
+.log-entry.log-info   .log-msg { color: rgba(0,245,255,0.8); }
+.log-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.log-ok   .log-dot { background: var(--neon-green); }
+.log-warn .log-dot { background: var(--neon-yellow); }
+.log-error.log-dot { background: var(--neon-red); }
+.log-info .log-dot { background: var(--neon-cyan); }
+
+/* ── NODE MAP ── */
+.node-card { padding: 20px 24px; }
+.node-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 480px) {
+  .node-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.node-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 8px;
+  border-radius: 10px;
+  background: rgba(0,245,255,0.03);
+  border: 1px solid rgba(0,245,255,0.08);
+  transition: all 0.3s;
+  cursor: default;
+}
+.node-item:hover {
+  border-color: rgba(0,245,255,0.25);
+  background: rgba(0,245,255,0.06);
+}
+.node-circle {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 2px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 700;
+  position: relative;
+}
+.node-online  { border-color: var(--neon-green); color: var(--neon-green); }
+.node-warning { border-color: var(--neon-yellow); color: var(--neon-yellow); }
+.node-offline { border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.3); }
+.node-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.node-ping {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: rgba(106,143,168,0.7);
+}
+
+/* Attack flash effect */
+@keyframes redFlash {
+  0%,100% { background: var(--glass-bg); }
+  20%,60% { background: rgba(255,45,85,0.12); }
+}
+.flash-attack { animation: redFlash 0.8s ease; }
+
+/* Fade animations */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up-1 { animation: fadeUp 0.5s 0.1s ease both; }
+.fade-up-2 { animation: fadeUp 0.5s 0.2s ease both; }
+.fade-up-3 { animation: fadeUp 0.5s 0.3s ease both; }
+.fade-up-4 { animation: fadeUp 0.5s 0.4s ease both; }
+
+/* Shake animation for attack */
+@keyframes shake {
+  0%,100%{transform:translateX(0)} 15%{transform:translateX(-6px)} 30%{transform:translateX(6px)}
+  45%{transform:translateX(-5px)} 60%{transform:translateX(5px)} 75%{transform:translateX(-3px)} 90%{transform:translateX(3px)}
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,245,255,0.2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ─── CITY BACKGROUND CANVAS ─── -->
+<canvas id="bg-canvas"></canvas>
+<div class="stars"></div>
+<div class="scanlines"></div>
+
+<!-- ════════════════════════════════════════════
+  SCREEN 1: LOGIN
+════════════════════════════════════════════ -->
+<div class="screen" id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="icon-wrap">
+        <!-- Shield + leaf icon -->
+        <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18 3L6 8v10c0 7.18 5.14 13.9 12 15.5C24.86 31.9 30 25.18 30 18V8L18 3z"
+                stroke="#00f5ff" stroke-width="1.8" fill="rgba(0,245,255,0.07)"/>
+          <circle cx="18" cy="18" r="5" stroke="#00f5ff" stroke-width="1.5"
+                  fill="rgba(0,245,255,0.12)"/>
+          <path d="M18 13v10M13 18h10" stroke="#00f5ff" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h1>SecureEnv</h1>
+      <p>IoT Environmental Intelligence System</p>
+    </div>
+
+    <div class="field-group">
+      <label>Access ID</label>
+      <input type="text" id="login-user" placeholder="admin@secureenv.io" value="admin@secureenv.io" autocomplete="off"/>
+    </div>
+    <div class="field-group">
+      <label>Security Key</label>
+      <input type="password" id="login-pass" placeholder="••••••••" value="secure123" autocomplete="off"/>
+    </div>
+
+    <button class="btn-login" onclick="startAuth()">AUTHENTICATE &amp; CONNECT</button>
+    <p class="hint">Demo credentials: <span>admin@secureenv.io</span> / <span>secure123</span></p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+  SCREEN 2: AUTH LOADING
+════════════════════════════════════════════ -->
+<div class="screen hidden" id="auth-screen">
+  <div class="auth-logo">SECUREENV AUTHENTICATION</div>
+  <div class="auth-steps" id="auth-steps">
+    <div class="auth-step" id="step-1"><span class="step-icon">🔐</span><span>Verifying credentials...</span></div>
+    <div class="auth-step" id="step-2"><span class="step-icon">🌐</span><span>Establishing encrypted tunnel...</span></div>
+    <div class="auth-step" id="step-3"><span class="step-icon">📡</span><span>Connecting to IoT sensor nodes...</span></div>
+    <div class="auth-step" id="step-4"><span class="step-icon">🛡️</span><span>Initializing security protocols...</span></div>
+    <div class="auth-step" id="step-5"><span class="step-icon">✅</span><span>Access granted — loading dashboard...</span></div>
+  </div>
+  <div class="auth-bar"><div class="auth-bar-fill" id="auth-fill"></div></div>
+</div>
+
+<!-- ════════════════════════════════════════════
+  SCREEN 3: DASHBOARD
+════════════════════════════════════════════ -->
+<div class="screen hidden" id="dashboard-screen" style="overflow-y:auto; align-items:flex-start; justify-content:stretch;">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-icon">
+        <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M10 2L3 5.5v7C3 16 6.14 19 10 20c3.86-1 7-4 7-7.5v-7L10 2z"
+                stroke="#00f5ff" stroke-width="1.4" fill="rgba(0,245,255,0.08)"/>
+          <circle cx="10" cy="11" r="2.5" stroke="#00f5ff" stroke-width="1.2"/>
+        </svg>
+      </div>
+      <div>
+        <div class="topbar-title">SecureEnv Monitor</div>
+        <div class="topbar-sub">Smart City • Environmental Intelligence</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="badge badge-online"><span class="badge-dot"></span>LIVE</div>
+      <div id="live-clock">--:--:--</div>
+      <button class="btn-logout" onclick="logout()">⏻ LOGOUT</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main-content">
+
+    <!-- ALERT AREA -->
+    <div class="alert-area" id="alert-area"></div>
+
+    <!-- SENSOR CARDS -->
+    <div class="section-title">Environmental Sensors</div>
+    <div class="sensor-grid fade-up-1">
+      <!-- PM2.5 -->
+      <div class="card sensor-card" id="card-pm25">
+        <div class="sensor-header">
+          <div class="sensor-name">PM2.5</div>
+          <div class="sensor-unit">µg/m³</div>
+        </div>
+        <div class="sensor-value neutral" id="val-pm25">—</div>
+        <div class="sensor-status status-neutral" id="status-pm25"><span>●</span> Initializing</div>
+        <div class="mini-bars" id="bars-pm25"></div>
+      </div>
+
+      <!-- CO2 -->
+      <div class="card sensor-card" id="card-co2">
+        <div class="sensor-header">
+          <div class="sensor-name">CO₂</div>
+          <div class="sensor-unit">ppm</div>
+        </div>
+        <div class="sensor-value neutral" id="val-co2">—</div>
+        <div class="sensor-status status-neutral" id="status-co2"><span>●</span> Initializing</div>
+        <div class="mini-bars" id="bars-co2"></div>
+      </div>
+
+      <!-- Temperature -->
+      <div class="card sensor-card" id="card-temp">
+        <div class="sensor-header">
+          <div class="sensor-name">Temperature</div>
+          <div class="sensor-unit">°C</div>
+        </div>
+        <div class="sensor-value neutral" id="val-temp">—</div>
+        <div class="sensor-status status-neutral" id="status-temp"><span>●</span> Initializing</div>
+        <div class="mini-bars" id="bars-temp"></div>
+      </div>
+    </div>
+
+    <!-- CHART + NODES ROW -->
+    <div class="info-row">
+      <!-- PM2.5 Chart -->
+      <div class="card chart-card fade-up-2">
+        <div class="chart-header">
+          <div class="chart-title">PM2.5 TREND ANALYSIS</div>
+          <div class="chart-legend"><div class="legend-dot"></div> PM2.5 Levels</div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="pm25-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- IoT Node Status -->
+      <div class="card node-card fade-up-2">
+        <div class="section-title" style="margin-bottom:14px;">IoT Node Status</div>
+        <div class="node-grid" id="node-grid"></div>
+      </div>
+    </div>
+
+    <!-- SECURITY PANEL -->
+    <div class="section-title">Security Control Center</div>
+    <div class="card security-panel fade-up-3">
+      <div class="security-header">
+        <div>
+          <div class="security-title">🛡️ INTRUSION DETECTION SYSTEM</div>
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-top:5px;font-family:var(--font-mono);">
+            Toggle security mode and simulate cyberattacks
+          </div>
+        </div>
+        <div class="controls-row">
+          <!-- Security Toggle -->
+          <div class="toggle-wrap">
+            <span class="toggle-label" id="toggle-label-before">BEFORE</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="security-toggle" onchange="toggleSecurity()"/>
+              <div class="toggle-track"></div>
+            </label>
+            <span class="toggle-label" id="toggle-label-after">AFTER</span>
+          </div>
+          <div class="security-mode-badge mode-insecure" id="mode-badge">⚠ INSECURE MODE</div>
+          <!-- Attack Button -->
+          <button class="btn btn-attack" onclick="simulateAttack()">
+            <span>⚡</span> SIMULATE ATTACK
+          </button>
+        </div>
+      </div>
+
+      <!-- Security metrics -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:4px;">
+        <div class="card" style="padding:14px 16px;border-color:rgba(0,245,255,0.1);">
+          <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:6px;">PACKETS RECEIVED</div>
+          <div style="font-family:var(--font-display);font-size:1.3rem;color:var(--neon-cyan);" id="stat-packets">0</div>
+        </div>
+        <div class="card" style="padding:14px 16px;border-color:rgba(0,245,255,0.1);">
+          <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:6px;">ATTACKS BLOCKED</div>
+          <div style="font-family:var(--font-display);font-size:1.3rem;color:var(--neon-green);" id="stat-blocked">0</div>
+        </div>
+        <div class="card" style="padding:14px 16px;border-color:rgba(0,245,255,0.1);">
+          <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:6px;">ANOMALIES FOUND</div>
+          <div style="font-family:var(--font-display);font-size:1.3rem;color:var(--neon-yellow);" id="stat-anomalies">0</div>
+        </div>
+        <div class="card" style="padding:14px 16px;border-color:rgba(0,245,255,0.1);">
+          <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:6px;">INTEGRITY SCORE</div>
+          <div style="font-family:var(--font-display);font-size:1.3rem;" id="stat-integrity">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SYSTEM LOG -->
+    <div class="section-title fade-up-4">System Event Log</div>
+    <div class="card log-card fade-up-4">
+      <div class="log-list" id="log-list"></div>
+    </div>
+
+    <!-- FOOTER -->
+    <div style="text-align:center;margin-top:28px;font-family:var(--font-mono);font-size:0.68rem;color:rgba(106,143,168,0.4);letter-spacing:0.1em;">
+      SECUREENV v2.4.1 · IoT ENVIRONMENTAL INTELLIGENCE SYSTEM · SECURE COMMS ENABLED
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+  JAVASCRIPT
+════════════════════════════════════════════ -->
+<script>
+/* ─── CITY BACKGROUND CANVAS ─── */
+(function () {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+
+  // Building definitions
+  const buildings = [];
+  const LAYERS = [
+    { count: 9,  minW: 70, maxW: 120, minH: 0.22, maxH: 0.42, alpha: 0.35, color: '#0a1628' },
+    { count: 12, minW: 50, maxW: 95,  minH: 0.30, maxH: 0.55, alpha: 0.55, color: '#0c1c36' },
+    { count: 14, minW: 35, maxW: 75,  minH: 0.25, maxH: 0.50, alpha: 0.75, color: '#0e2040' },
+  ];
+
+  function rand(min, max) { return Math.random() * (max - min) + min; }
+
+  function initBuildings() {
+    buildings.length = 0;
+    LAYERS.forEach((layer, li) => {
+      let x = 0;
+      const totalW = W + 200;
+      while (x < totalW) {
+        const bw = rand(layer.minW, layer.maxW);
+        const bh = rand(layer.minH, layer.maxH) * H;
+        buildings.push({
+          x, y: H - bh,
+          w: bw, h: bh,
+          layer: li,
+          color: layer.color,
+          alpha: layer.alpha,
+          windows: generateWindows(bw, bh),
+        });
+        x += bw + rand(4, 20);
+      }
+    });
+  }
+
+  function generateWindows(bw, bh) {
+    const wins = [];
+    const cols = Math.floor(bw / 14);
+    const rows = Math.floor(bh / 16);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (Math.random() < 0.45) {
+          wins.push({
+            cx: (c + 0.5) * (bw / cols),
+            cy: bh - (r + 1) * (bh / rows),
+            lit: Math.random() < 0.55,
+            color: Math.random() < 0.15 ? '#00f5ff' : '#ffd27a',
+          });
+        }
+      }
+    }
+    return wins;
+  }
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    initBuildings();
+  }
+
+  function drawSky() {
+    const g = ctx.createLinearGradient(0, 0, 0, H * 0.72);
+    g.addColorStop(0,   '#010811');
+    g.addColorStop(0.4, '#020d1e');
+    g.addColorStop(0.7, '#040e22');
+    g.addColorStop(1,   '#071528');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawMoon() {
+    const mx = W * 0.82, my = H * 0.12, mr = 28;
+    const glow = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 4);
+    glow.addColorStop(0, 'rgba(0,245,255,0.08)');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.fillRect(mx - mr * 4, my - mr * 4, mr * 8, mr * 8);
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
+    ctx.fillStyle = '#c5e8f0';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(mx + 8, my - 6, mr, 0, Math.PI * 2);
+    ctx.fillStyle = '#020d1e';
+    ctx.fill();
+  }
+
+  function drawBuildings() {
+    buildings.forEach(b => {
+      ctx.globalAlpha = b.alpha;
+      ctx.fillStyle = b.color;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      // Antenna
+      if (Math.random() < 0.01 || b.w > 60) {
+        ctx.fillStyle = b.color;
+        ctx.fillRect(b.x + b.w * 0.45, b.y - 12, 3, 12);
+      }
+      // Windows
+      ctx.globalAlpha = b.alpha * 1.2;
+      b.windows.forEach(win => {
+        if (win.lit) {
+          ctx.fillStyle = win.color;
+          ctx.fillRect(b.x + win.cx - 3, b.y + win.cy - 3, 5, 4);
+        }
+      });
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  function drawGround() {
+    const g = ctx.createLinearGradient(0, H * 0.78, 0, H);
+    g.addColorStop(0, '#030e1c');
+    g.addColorStop(1, '#010a16');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H * 0.78, W, H * 0.22);
+    // Horizon glow
+    const hg = ctx.createLinearGradient(0, H * 0.73, 0, H * 0.82);
+    hg.addColorStop(0, 'rgba(0,245,255,0.0)');
+    hg.addColorStop(0.5, 'rgba(0,245,255,0.04)');
+    hg.addColorStop(1, 'rgba(0,245,255,0.0)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(0, H * 0.73, W, H * 0.1);
+  }
+
+  // Blink some windows
+  setInterval(() => {
+    buildings.forEach(b => {
+      b.windows.forEach(w => {
+        if (Math.random() < 0.003) w.lit = !w.lit;
+      });
+    });
+  }, 1200);
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawSky();
+    drawMoon();
+    drawBuildings();
+    drawGround();
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  draw();
+})();
+
+/* ─── CLOCK ─── */
+function updateClock() {
+  const el = document.getElementById('live-clock');
+  if (el) el.textContent = new Date().toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+/* ─── LOGIN ─── */
+function startAuth() {
+  const user = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value.trim();
+  if (!user || !pass) { shakeLogin(); return; }
+  // Simple credential check
+  if (user !== 'admin@secureenv.io' || pass !== 'secure123') {
+    shakeLogin();
+    showLoginError();
+    return;
+  }
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('auth-screen').classList.remove('hidden');
+  runAuth();
+}
+
+function shakeLogin() {
+  const box = document.querySelector('.login-box');
+  box.style.animation = 'none';
+  void box.offsetWidth;
+  box.style.animation = 'shake 0.5s ease';
+  setTimeout(() => box.style.animation = '', 600);
+}
+function showLoginError() {
+  const existing = document.querySelector('.login-error');
+  if (existing) existing.remove();
+  const err = document.createElement('p');
+  err.className = 'login-error';
+  err.textContent = 'Invalid credentials. Try demo credentials below.';
+  err.style.cssText = 'text-align:center;color:#ff2d55;font-size:0.78rem;margin-top:10px;font-family:var(--font-mono);animation:fadeUp 0.3s ease;';
+  document.querySelector('.btn-login').after(err);
+  setTimeout(() => err.remove(), 3500);
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !document.getElementById('login-screen').classList.contains('hidden')) {
+    startAuth();
+  }
+});
+
+/* ─── AUTH SEQUENCE ─── */
+function runAuth() {
+  const steps = document.querySelectorAll('.auth-step');
+  const fill  = document.getElementById('auth-fill');
+  const durations = [700, 900, 800, 700, 500];
+  let current = 0;
+
+  function doStep(i) {
+    if (i >= steps.length) {
+      setTimeout(launchDashboard, 400);
+      return;
+    }
+    steps[i].classList.add('active');
+    fill.style.width = ((i + 1) / steps.length * 100) + '%';
+    setTimeout(() => {
+      steps[i].classList.remove('active');
+      steps[i].classList.add('done');
+      doStep(i + 1);
+    }, durations[i]);
+  }
+  doStep(0);
+}
+
+function launchDashboard() {
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('dashboard-screen').classList.remove('hidden');
+  initDashboard();
+}
+
+/* ─── DASHBOARD STATE ─── */
+const state = {
+  secureMode: false,
+  packets: 0,
+  blocked: 0,
+  anomalies: 0,
+  pm25History: Array(20).fill(null),
+  pm25Bars: Array(10).fill(0),
+  co2Bars:  Array(10).fill(0),
+  tempBars: Array(10).fill(0),
+};
+
+// PM2.5 thresholds (µg/m³)
+const PM25_GOOD = 12, PM25_MOD = 35.4;
+// CO2 thresholds (ppm)
+const CO2_GOOD = 800, CO2_MOD = 1200;
+// Temp thresholds (°C)
+const TEMP_GOOD = 30, TEMP_MOD = 38;
+
+function classify(val, goodT, modT) {
+  if (val <= goodT)  return 'good';
+  if (val <= modT)   return 'moderate';
+  return 'unhealthy';
+}
+
+function labelOf(cls) {
+  return { good: 'Good', moderate: 'Moderate', unhealthy: 'Unhealthy' }[cls];
+}
+
+function rand(min, max) { return Math.random() * (max - min) + min; }
+function randInt(min, max){ return Math.floor(rand(min, max + 1)); }
+
+/* ─── GENERATE SENSOR READINGS ─── */
+function generateReading() {
+  return {
+    pm25: parseFloat(rand(5, 42).toFixed(1)),
+    co2:  randInt(400, 1100),
+    temp: parseFloat(rand(18, 35).toFixed(1)),
+  };
+}
+
+/* ─── CHART.JS SETUP ─── */
+let pm25Chart;
+function initChart() {
+  const ctx = document.getElementById('pm25-chart').getContext('2d');
+  const labels = state.pm25History.map(() => '');
+  pm25Chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'PM2.5',
+        data: state.pm25History,
+        borderColor: '#ff2d55',
+        backgroundColor: 'rgba(255,45,85,0.08)',
+        borderWidth: 2.2,
+        pointRadius: 3,
+        pointBackgroundColor: '#ff2d55',
+        pointBorderColor: '#ff2d55',
+        tension: 0.45,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 600 },
+      scales: {
+        x: {
+          display: false,
+          grid: { color: 'rgba(0,245,255,0.05)' },
+        },
+        y: {
+          min: 0,
+          grid: { color: 'rgba(0,245,255,0.06)' },
+          ticks: {
+            color: 'rgba(106,143,168,0.7)',
+            font: { family: "'JetBrains Mono'", size: 10 },
+            maxTicksLimit: 5,
+          },
+          border: { color: 'rgba(0,245,255,0.08)' },
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(2,11,24,0.9)',
+          borderColor: 'rgba(255,45,85,0.5)',
+          borderWidth: 1,
+          titleColor: '#ff2d55',
+          bodyColor: '#e8f4ff',
+          bodyFont: { family: "'JetBrains Mono'" },
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.y} µg/m³`,
+          }
+        }
+      }
+    }
+  });
+}
+
+/* ─── IOT NODES ─── */
+const NODE_NAMES = ['Zone A', 'Zone B', 'Zone C', 'Zone D', 'Node E', 'Node F', 'Node G', 'Relay H'];
+function initNodes() {
+  const grid = document.getElementById('node-grid');
+  grid.innerHTML = '';
+  NODE_NAMES.forEach((name, i) => {
+    const status = i < 6 ? 'online' : (i === 6 ? 'warning' : 'offline');
+    const ping = status === 'online' ? randInt(12, 45) : (status === 'warning' ? randInt(80, 200) : '—');
+    const icon = status === 'online' ? '●' : (status === 'warning' ? '◐' : '○');
+    grid.innerHTML += `
+      <div class="node-item">
+        <div class="node-circle node-${status}">${icon}</div>
+        <div class="node-label">${name}</div>
+        <div class="node-ping">${ping === '—' ? '—' : ping + 'ms'}</div>
+      </div>`;
+  });
+}
+
+/* ─── UPDATE SENSOR DISPLAY ─── */
+function updateSensor(id, val, unit, cls) {
+  const valEl    = document.getElementById(`val-${id}`);
+  const statusEl = document.getElementById(`status-${id}`);
+  const barsEl   = document.getElementById(`bars-${id}`);
+
+  valEl.textContent = val + (unit ? '' : '');
+  valEl.className = `sensor-value ${cls}`;
+
+  const label = labelOf(cls);
+  statusEl.className = `sensor-status status-${cls}`;
+  statusEl.innerHTML = `<span>●</span> ${label}`;
+
+  // Update mini bars
+  const arr = id === 'pm25' ? state.pm25Bars : (id === 'co2' ? state.co2Bars : state.tempBars);
+  arr.shift();
+  // Normalize for bar height
+  const norm = id === 'pm25' ? val / 60 : (id === 'co2' ? (val - 400) / 900 : (val - 10) / 40);
+  arr.push(Math.max(0.07, Math.min(1, norm)));
+  barsEl.innerHTML = arr.map(h => `<div class="mini-bar" style="height:${(h * 100).toFixed(0)}%;background:${
+    cls === 'good' ? 'rgba(0,255,136,0.35)' : cls === 'moderate' ? 'rgba(255,214,10,0.35)' : 'rgba(255,45,85,0.35)'
+  };"></div>`).join('');
+}
+
+/* ─── MAIN UPDATE LOOP ─── */
+function updateReadings() {
+  const r = generateReading();
+  state.packets++;
+  document.getElementById('stat-packets').textContent = state.packets;
+
+  // Update PM2.5 sensor
+  const pm25cls = classify(r.pm25, PM25_GOOD, PM25_MOD);
+  updateSensor('pm25', r.pm25, 'µg/m³', pm25cls);
+
+  // Update CO2 sensor
+  const co2cls = classify(r.co2, CO2_GOOD, CO2_MOD);
+  updateSensor('co2', r.co2, 'ppm', co2cls);
+
+  // Update Temp sensor
+  const tempcls = classify(r.temp, TEMP_GOOD, TEMP_MOD);
+  updateSensor('temp', r.temp, '°C', tempcls);
+
+  // Chart update
+  state.pm25History.shift();
+  state.pm25History.push(r.pm25);
+  pm25Chart.data.datasets[0].data = [...state.pm25History];
+  pm25Chart.update('none');
+
+  // Integrity score
+  const score = state.packets > 0 ? Math.min(100, Math.round(100 - (state.anomalies / Math.max(1, state.packets)) * 100)) : 100;
+  const intEl = document.getElementById('stat-integrity');
+  intEl.textContent = score + '%';
+  intEl.style.color = score >= 90 ? 'var(--neon-green)' : score >= 70 ? 'var(--neon-yellow)' : 'var(--neon-red)';
+}
+
+/* ─── SECURITY TOGGLE ─── */
+function toggleSecurity() {
+  state.secureMode = document.getElementById('security-toggle').checked;
+  const badge = document.getElementById('mode-badge');
+  if (state.secureMode) {
+    badge.className = 'security-mode-badge mode-secure';
+    badge.textContent = '✓ SECURE MODE ACTIVE';
+    addLog('info', 'Security protocols enabled. Anomaly detection active.');
+    showAlert('success', '🛡️ Secure mode activated. Anomaly detection and data validation enabled.');
+  } else {
+    badge.className = 'security-mode-badge mode-insecure';
+    badge.textContent = '⚠ INSECURE MODE';
+    addLog('warn', 'Security disabled. System vulnerable to data injection attacks.');
+    showAlert('warning', '⚠ Insecure mode active. System is vulnerable to spoofed data.');
+  }
+}
+
+/* ─── ATTACK SIMULATION ─── */
+function simulateAttack() {
+  // Flash the security card
+  const secPanel = document.querySelector('.security-panel');
+  secPanel.classList.remove('flash-attack');
+  void secPanel.offsetWidth;
+  secPanel.classList.add('flash-attack');
+
+  const fakeData = {
+    pm25: randInt(800, 1200),
+    co2: randInt(4000, 6000),
+    temp: randInt(85, 120),
+  };
+
+  addLog('error', `Attack packet received → PM2.5: ${fakeData.pm25} µg/m³, CO₂: ${fakeData.co2} ppm, Temp: ${fakeData.temp}°C`);
+  state.anomalies++;
+  document.getElementById('stat-anomalies').textContent = state.anomalies;
+
+  if (state.secureMode) {
+    // BLOCK the attack
+    state.blocked++;
+    document.getElementById('stat-blocked').textContent = state.blocked;
+    addLog('error', '🛡 ANOMALY DETECTED → Data rejected. Values exceed safety thresholds.');
+
+    // Show red alert
+    showAlert('danger', '🚨 Attack detected! Malicious data injection blocked. Abnormal values rejected by security layer.');
+
+    // Shake all sensor cards
+    ['card-pm25', 'card-co2', 'card-temp'].forEach(id => {
+      const el = document.getElementById(id);
+      el.style.animation = 'none';
+      void el.offsetWidth;
+      el.style.animation = 'shake 0.5s ease';
+      setTimeout(() => el.style.animation = '', 600);
+    });
+
+  } else {
+    // ACCEPT the attack — show spoofed values
+    updateSensor('pm25', fakeData.pm25, 'µg/m³', 'unhealthy');
+    updateSensor('co2',  fakeData.co2, 'ppm', 'unhealthy');
+    updateSensor('temp', fakeData.temp, '°C', 'unhealthy');
+
+    // Push fake value to chart
+    state.pm25History.shift();
+    state.pm25History.push(fakeData.pm25);
+    pm25Chart.data.datasets[0].data = [...state.pm25History];
+    pm25Chart.update();
+
+    addLog('warn', '⚠ System accepted spoofed data. Sensor readings now corrupted!');
+    showAlert('warning', '⚠ SYSTEM COMPROMISED! Fake sensor data injected successfully. No security measures active.');
+  }
+}
+
+/* ─── ALERT SYSTEM ─── */
+let alertTimeout;
+function showAlert(type, msg) {
+  clearTimeout(alertTimeout);
+  const area = document.getElementById('alert-area');
+  const icons = { danger: '🚨', warning: '⚠️', success: '✅' };
+  area.innerHTML = `
+    <div class="alert alert-${type}">
+      <span class="alert-icon">${icons[type]}</span>
+      <span>${msg}</span>
+      <button class="alert-close" onclick="this.parentElement.remove()">✕</button>
+    </div>`;
+  alertTimeout = setTimeout(() => { area.innerHTML = ''; }, 7000);
+}
+
+/* ─── LOG SYSTEM ─── */
+function addLog(type, msg) {
+  const list = document.getElementById('log-list');
+  const time = new Date().toLocaleTimeString();
+  const entry = document.createElement('div');
+  entry.className = `log-entry log-${type}`;
+  entry.innerHTML = `
+    <span class="log-time">${time}</span>
+    <span class="log-dot" style="background:${
+      type === 'ok' ? 'var(--neon-green)' :
+      type === 'warn' ? 'var(--neon-yellow)' :
+      type === 'error' ? 'var(--neon-red)' : 'var(--neon-cyan)'
+    };"></span>
+    <span class="log-msg">${msg}</span>`;
+  list.prepend(entry);
+  // Keep max 20 entries
+  while (list.children.length > 20) list.lastChild.remove();
+}
+
+/* ─── LOGOUT ─── */
+function logout() {
+  clearInterval(updateInterval);
+  document.getElementById('dashboard-screen').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+  // Reset state
+  state.secureMode = false;
+  state.packets = 0;
+  state.blocked = 0;
+  state.anomalies = 0;
+  state.pm25History.fill(null);
+  state.pm25Bars.fill(0);
+  state.co2Bars.fill(0);
+  state.tempBars.fill(0);
+  document.getElementById('security-toggle').checked = false;
+  // Reset auth steps
+  document.querySelectorAll('.auth-step').forEach(s => {
+    s.classList.remove('done', 'active');
+  });
+  document.getElementById('auth-fill').style.width = '0';
+}
+
+/* ─── INIT DASHBOARD ─── */
+let updateInterval;
+function initDashboard() {
+  initChart();
+  initNodes();
+  addLog('info', 'System initialized. IoT nodes connected. Data stream active.');
+  addLog('ok',   'Environmental sensors online. Baseline readings established.');
+  addLog('warn', 'Security mode is OFF. Enable for anomaly detection.');
+
+  // Initial reading
+  updateReadings();
+
+  // Auto-update every 2.5 seconds
+  updateInterval = setInterval(updateReadings, 2500);
+}
+</script>
+</body>
+</html>
