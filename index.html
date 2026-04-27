@@ -999,13 +999,17 @@ html, body {
 
     <!-- CHART + NODES ROW -->
     <div class="info-row">
-      <!-- PM2.5 Chart -->
+      <!-- Multi-Sensor Chart -->
       <div class="card chart-card fade-up-2">
         <div class="chart-header">
-          <div class="chart-title">PM2.5 TREND ANALYSIS</div>
-          <div class="chart-legend"><div class="legend-dot"></div> PM2.5 Levels</div>
+          <div class="chart-title">LIVE SENSOR TRENDS</div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
+            <div class="chart-legend"><div class="legend-dot" style="background:#ff2d55;box-shadow:0 0 8px #ff2d55;"></div> PM2.5</div>
+            <div class="chart-legend"><div class="legend-dot" style="background:#ffd60a;box-shadow:0 0 8px #ffd60a;"></div> CO₂</div>
+            <div class="chart-legend" style="color:#ff8c00;"><div class="legend-dot" style="background:#ff8c00;box-shadow:0 0 8px #ff8c00;"></div> Temp</div>
+          </div>
         </div>
-        <div class="chart-wrap">
+        <div class="chart-wrap" style="height:240px;">
           <canvas id="pm25-chart"></canvas>
         </div>
       </div>
@@ -1315,6 +1319,8 @@ const state = {
   blocked: 0,
   anomalies: 0,
   pm25History: Array(20).fill(null),
+  co2History:  Array(20).fill(null),
+  tempHistory: Array(20).fill(null),
   pm25Bars: Array(10).fill(0),
   co2Bars:  Array(10).fill(0),
   tempBars: Array(10).fill(0),
@@ -1358,29 +1364,54 @@ function initChart() {
     type: 'line',
     data: {
       labels,
-      datasets: [{
-        label: 'PM2.5',
-        data: state.pm25History,
-        borderColor: '#ff2d55',
-        backgroundColor: 'rgba(255,45,85,0.08)',
-        borderWidth: 2.2,
-        pointRadius: 3,
-        pointBackgroundColor: '#ff2d55',
-        pointBorderColor: '#ff2d55',
-        tension: 0.45,
-        fill: true,
-      }]
+      datasets: [
+        {
+          label: 'PM2.5 (µg/m³)',
+          data: [...state.pm25History],
+          borderColor: '#ff2d55',
+          backgroundColor: 'rgba(255,45,85,0.07)',
+          borderWidth: 2.2,
+          pointRadius: 2.5,
+          pointBackgroundColor: '#ff2d55',
+          tension: 0.45,
+          fill: true,
+          yAxisID: 'yLeft',
+        },
+        {
+          label: 'CO2 (ppm)',
+          data: [...state.co2History],
+          borderColor: '#ffd60a',
+          backgroundColor: 'rgba(255,214,10,0.05)',
+          borderWidth: 2.2,
+          pointRadius: 2.5,
+          pointBackgroundColor: '#ffd60a',
+          tension: 0.45,
+          fill: false,
+          yAxisID: 'yRight',
+        },
+        {
+          label: 'Temp (°C)',
+          data: [...state.tempHistory],
+          borderColor: '#ff8c00',
+          backgroundColor: 'rgba(255,140,0,0.06)',
+          borderWidth: 2.2,
+          pointRadius: 2.5,
+          pointBackgroundColor: '#ff8c00',
+          tension: 0.45,
+          fill: false,
+          yAxisID: 'yLeft',
+        },
+      ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: { duration: 600 },
+      animation: { duration: 500 },
+      interaction: { mode: 'index', intersect: false },
       scales: {
-        x: {
-          display: false,
-          grid: { color: 'rgba(0,245,255,0.05)' },
-        },
-        y: {
+        x: { display: false },
+        yLeft: {
+          position: 'left',
           min: 0,
           grid: { color: 'rgba(0,245,255,0.06)' },
           ticks: {
@@ -1389,19 +1420,34 @@ function initChart() {
             maxTicksLimit: 5,
           },
           border: { color: 'rgba(0,245,255,0.08)' },
-        }
+        },
+        yRight: {
+          position: 'right',
+          min: 350,
+          grid: { drawOnChartArea: false },
+          ticks: {
+            color: 'rgba(255,214,10,0.5)',
+            font: { family: "'JetBrains Mono'", size: 10 },
+            maxTicksLimit: 5,
+          },
+          border: { color: 'rgba(255,214,10,0.08)' },
+        },
       },
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: 'rgba(2,11,24,0.9)',
-          borderColor: 'rgba(255,45,85,0.5)',
+          backgroundColor: 'rgba(2,11,24,0.92)',
+          borderColor: 'rgba(0,245,255,0.2)',
           borderWidth: 1,
-          titleColor: '#ff2d55',
+          titleColor: 'rgba(106,143,168,0.8)',
           bodyColor: '#e8f4ff',
-          bodyFont: { family: "'JetBrains Mono'" },
+          bodyFont: { family: "'JetBrains Mono'", size: 11 },
+          padding: 10,
           callbacks: {
-            label: ctx => ` ${ctx.parsed.y} µg/m³`,
+            label: ctx => {
+              const units = ['µg/m³', 'ppm', '°C'];
+              return '  ' + ctx.dataset.label.split(' ')[0] + ': ' + ctx.parsed.y + ' ' + units[ctx.datasetIndex];
+            }
           }
         }
       }
@@ -1469,10 +1515,13 @@ function updateReadings() {
   const tempcls = classify(r.temp, TEMP_GOOD, TEMP_MOD);
   updateSensor('temp', r.temp, '°C', tempcls);
 
-  // Chart update
-  state.pm25History.shift();
-  state.pm25History.push(r.pm25);
+  // Chart update — push all 3 sensor histories
+  state.pm25History.shift(); state.pm25History.push(r.pm25);
+  state.co2History.shift();  state.co2History.push(r.co2);
+  state.tempHistory.shift(); state.tempHistory.push(r.temp);
   pm25Chart.data.datasets[0].data = [...state.pm25History];
+  pm25Chart.data.datasets[1].data = [...state.co2History];
+  pm25Chart.data.datasets[2].data = [...state.tempHistory];
   pm25Chart.update('none');
 
   // Integrity score
@@ -1541,10 +1590,13 @@ function simulateAttack() {
     updateSensor('co2',  fakeData.co2, 'ppm', 'unhealthy');
     updateSensor('temp', fakeData.temp, '°C', 'unhealthy');
 
-    // Push fake value to chart
-    state.pm25History.shift();
-    state.pm25History.push(fakeData.pm25);
+    // Push fake values to all 3 chart lines
+    state.pm25History.shift(); state.pm25History.push(fakeData.pm25);
+    state.co2History.shift();  state.co2History.push(fakeData.co2);
+    state.tempHistory.shift(); state.tempHistory.push(fakeData.temp);
     pm25Chart.data.datasets[0].data = [...state.pm25History];
+    pm25Chart.data.datasets[1].data = [...state.co2History];
+    pm25Chart.data.datasets[2].data = [...state.tempHistory];
     pm25Chart.update();
 
     addLog('warn', '⚠ System accepted spoofed data. Sensor readings now corrupted!');
@@ -1597,6 +1649,8 @@ function logout() {
   state.blocked = 0;
   state.anomalies = 0;
   state.pm25History.fill(null);
+  state.co2History.fill(null);
+  state.tempHistory.fill(null);
   state.pm25Bars.fill(0);
   state.co2Bars.fill(0);
   state.tempBars.fill(0);
